@@ -2,6 +2,7 @@ package com.nikestore.shoeshop.controller;
 
 import com.nikestore.shoeshop.dto.CheckoutForm;
 import com.nikestore.shoeshop.entity.CustomerOrder;
+import com.nikestore.shoeshop.entity.Product;
 import com.nikestore.shoeshop.repository.AppUserRepository;
 import com.nikestore.shoeshop.service.CartService;
 import com.nikestore.shoeshop.service.CatalogService;
@@ -16,6 +17,10 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Controller
 public class CartController {
@@ -48,11 +53,24 @@ public class CartController {
             HttpSession session,
             RedirectAttributes redirectAttributes
     ) {
+        var product = catalogService.requireProductById(productId);
+        if (product.getStock() == null || product.getStock() <= 0) {
+            redirectAttributes.addFlashAttribute("error", "This product is currently out of stock.");
+            return "redirect:/product/" + product.getSlug();
+        }
+        if (!isValidSize(product, size)) {
+            redirectAttributes.addFlashAttribute("error", "Selected size is not available for this product.");
+            return "redirect:/product/" + product.getSlug();
+        }
         if (quantity < 1) {
             redirectAttributes.addFlashAttribute("error", "Quantity must be at least 1.");
-            return "redirect:/cart";
+            return "redirect:/product/" + product.getSlug();
         }
-        cartService.add(session, catalogService.requireProductById(productId), quantity, size);
+        int cappedQuantity = Math.min(quantity, product.getStock());
+        cartService.add(session, product, cappedQuantity, size);
+        if (quantity > product.getStock()) {
+            redirectAttributes.addFlashAttribute("info", "Quantity was adjusted to available stock.");
+        }
         redirectAttributes.addFlashAttribute("success", "Added to cart successfully!");
         return "redirect:/cart";
     }
@@ -63,18 +81,40 @@ public class CartController {
         String couponCode = couponCode(session);
         CouponService.CouponQuote couponQuote = couponService.quote(couponCode, subtotal).orElse(null);
         populateSummary(model, session, subtotal, couponCode, couponQuote);
-        model.addAttribute("cartItems", cartService.items(session).values());
+        var cartItems = cartService.items(session).values();
+        model.addAttribute("cartItems", cartItems);
+        Map<Long, List<String>> sizeOptionsByProductId = cartItems.stream()
+                .map(item -> catalogService.requireProductById(item.getProductId()))
+                .collect(Collectors.toMap(
+                        product -> product.getId(),
+                        catalogService::availableSizes,
+                        (first, second) -> first
+                ));
+        model.addAttribute("sizeOptionsByProductId", sizeOptionsByProductId);
         return "shop/cart";
     }
 
     @PostMapping("/cart/update")
     public String updateCart(@RequestParam Long productId, @RequestParam int quantity, @RequestParam String size, @RequestParam String oldSize, HttpSession session, RedirectAttributes redirectAttributes) {
+        var product = catalogService.requireProductById(productId);
+        if (product.getStock() == null || product.getStock() <= 0) {
+            cartService.remove(session, productId, oldSize);
+            redirectAttributes.addFlashAttribute("error", "This product is out of stock and was removed from your cart.");
+            return "redirect:/cart";
+        }
+        if (!isValidSize(product, size)) {
+            redirectAttributes.addFlashAttribute("error", "Selected size is not available for this product.");
+            return "redirect:/cart";
+        }
         if (quantity < 1) {
             redirectAttributes.addFlashAttribute("error", "Quantity must be at least 1.");
             return "redirect:/cart";
         }
-        var product = catalogService.requireProductById(productId);
-        cartService.update(session, productId, quantity, oldSize, size, product);
+        int cappedQuantity = Math.min(quantity, product.getStock());
+        cartService.update(session, productId, cappedQuantity, oldSize, size, product);
+        if (quantity > product.getStock()) {
+            redirectAttributes.addFlashAttribute("info", "Quantity was adjusted to available stock.");
+        }
         redirectAttributes.addFlashAttribute("success", "Cart updated successfully!");
         return "redirect:/cart";
     }
@@ -191,5 +231,10 @@ public class CartController {
         model.addAttribute("couponCode", couponCode);
         model.addAttribute("couponQuote", couponQuote);
         model.addAttribute("cartCount", cartService.count(session));
+    }
+
+    private boolean isValidSize(Product product, String size) {
+        List<String> availableSizes = catalogService.availableSizes(product);
+        return availableSizes.stream().anyMatch(allowed -> allowed.equalsIgnoreCase(size == null ? "" : size.trim()));
     }
 }
