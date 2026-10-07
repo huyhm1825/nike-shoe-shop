@@ -42,7 +42,7 @@
                         <tr th:each="item : ${cartItems}">
                             <td>
                                 <div class="d-flex align-items-center gap-3">
-                                    <img th:src="${item.imageUrl}" alt="" class="cart-thumb">
+                                    <img th:src="${item.imageUrl}" th:alt="${item.name}" class="cart-thumb">
                                     <div>
                                         <div class="fw-semibold" th:text="${item.name}"></div>
                                         <small class="text-muted" th:text="${item.slug}"></small>
@@ -55,14 +55,7 @@
                                     <input type="hidden" name="oldSize" th:value="${item.size}">
                                     <div class="d-flex gap-2 align-items-center">
                                         <select name="size" class="form-select form-select-sm">
-                                            <option th:selected="${item.size == '39'}">39</option>
-                                            <option th:selected="${item.size == '40'}">40</option>
-                                            <option th:selected="${item.size == '41'}">41</option>
-                                            <option th:selected="${item.size == '42'}">42</option>
-                                            <option th:selected="${item.size == '43'}">43</option>
-                                            <option th:selected="${item.size == '44'}">44</option>
-                                            <option th:selected="${item.size == '45'}">45</option>
-                                            <option th:selected="${item.size == '46'}">46</option>
+                                            <option th:each="sizeOption : ${sizeOptionsByProductId[item.productId]}" th:value="${sizeOption}" th:text="${sizeOption}" th:selected="${item.size == sizeOption}"></option>
                                         </select>
                                         <input type="number" name="quantity" min="1" class="form-control form-control-sm" th:value="${item.quantity}">
                                     </div>
@@ -116,7 +109,7 @@
                     <span class="fs-5 fw-semibold">Total</span>
                     <span class="fs-4 fw-black" th:text="${#numbers.formatDecimal(grandTotal,0,'COMMA',0,'POINT')} + ' đ'"></span>
                 </div>
-                <a th:href="@{/checkout}" class="btn btn-accent btn-lg w-100 rounded-pill">Checkout</a>
+                <a th:href="@{/checkout}" class="btn btn-accent btn-lg w-100 rounded-pill" th:classappend="${#lists.isEmpty(cartItems) ? ' disabled' : ''}" th:attr="aria-disabled=${#lists.isEmpty(cartItems)}">Checkout</a>
             </div>
 
             <div class="summary-card">
